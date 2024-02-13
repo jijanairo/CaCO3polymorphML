@@ -1,0 +1,72 @@
+---
+title: "Probing factors associated with biomineralization peptide polymorph preference"
+author: "Prepared by Dr. Jose Isagani Janairo"
+date: "1/16/2024"
+output: html_document
+---
+
+### Loading packages and data
+```{r 1}
+set.seed(1234)
+setwd("~/Documents/Research/CaCo3 BP")
+library(caret)
+library(pROC)
+
+df <- read.csv("caco3complete.csv", header = TRUE) 
+str(df)
+dataset <- df[2:11]
+dataset$Class <- as.factor(dataset$Class)
+```
+
+### Optimization following backward elimination
+```{r 2}
+validation_index <- createDataPartition(dataset$Class, p=0.75, list=FALSE)
+validation <- dataset[-validation_index,]
+dataset <- dataset[validation_index,]
+validation$Class <- as.factor(validation$Class)
+
+control <- trainControl(method="cv", number=10, classProbs = T, savePredictions = "all", summaryFunction = twoClassSummary)
+metric <- "ROC"
+
+fit.svmR <- train(Class~ ., data=dataset, method="svmRadial", metric=metric, trControl=control, tuneLength = 5, preProc = c("center","scale"))
+
+fit.svmR
+
+fit.svmR1 <- train(Class~ tiny + aliphatic + aromatic, data=dataset, method="svmRadial", metric=metric, trControl=control, tuneLength = 5, preProc = c("center","scale"))
+
+fit.svmR1
+
+fit.svmR2 <- train(Class~ tiny + aliphatic + aromatic + acidic, data=dataset, method="svmRadial", metric=metric, trControl=control, tuneLength = 5, preProc = c("center","scale"))
+
+fit.svmR2
+
+fit.svmR3 <- train(Class~ tiny + aliphatic + aromatic + acidic + basic, data=dataset, method="svmRadial", metric=metric, trControl=control, tuneLength = 5, preProc = c("center","scale"))
+
+fit.svmR3
+```
+
+### Test
+```{r 3}
+validation$Class <- as.factor(validation$Class)
+predictions <- predict(fit.svmR3, validation, type = "prob") #for AUC calculation
+prediction <- predict(fit.svmR3, validation)
+show <- confusionMatrix(prediction, validation$Class, mode = "everything") # for confusion matrix
+show
+
+#AUC calculation
+result.roc <- roc(validation$Class, predictions$A)
+
+roc_test <-roc(validation$Class, predictions$A, smoothed = T, 
+               ci = T, ci.alpha = 0.9,stratified = F, plot = T, auc.polygon = T, 
+               max.auc.polygon = T, grid = F, print.auc = T, show.thres = T)
+
+roc_test
+```
+#### Model interpretation
+```{r 4}
+library(iml)
+x <- dataset[c(2,4,5,9,10)]
+predictor <- Predictor$new(fit.svmR3, data = x, y = dataset$Class)
+shapley <- Shapley$new(predictor, x.interest = x[1,])
+plot(shapley)
+shapley$results
